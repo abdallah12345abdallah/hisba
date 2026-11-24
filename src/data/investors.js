@@ -18,11 +18,35 @@ export const profitYTD = () => yearNets().reduce((a, v) => a + v, 0)
 export const profitProjected = () => Math.round(profitYTD() / (MONTH_NOW - 1 + DAY_NOW / 30) * 12 / 1000) * 1000
 
 /* split settings (Admin) */
-export const SPLIT = reactive({ mgmt: 25, owner: 60 })
-export const managers = () => {
-  const o = STAFF.find((e) => e.role === 'owner')?.name || 'صاحب الحلقة'
-  const p = STAFF.find((e) => e.role === 'partner')?.name || 'الشريك'
-  return [{ name: o, pct: SPLIT.owner }, { name: p, pct: 100 - SPLIT.owner }]
+// mgmt = the management share of the year's profit; partners = the management partners, each with his own % (sum = 100)
+const staffName = (role, fallback) => STAFF.find((e) => e.role === role)?.name || fallback
+export const SPLIT = reactive({
+  mgmt: 25,
+  partners: [
+    { name: staffName('owner', 'صاحب الحلقة'), pct: 50 },
+    { name: staffName('partner', 'الشريك'), pct: 30 },
+    { name: 'م. وليد شاكر', pct: 20 },
+  ],
+})
+export const managers = () => SPLIT.partners.map((p) => ({ name: p.name, pct: p.pct }))
+// amber shades for the management partners (the management share is amber everywhere)
+export const MG_COLORS = ['#f5a53a', '#f8c77d', '#d98420', '#fbe0b0', '#b86b12', '#f2b866']
+export const mgColor = (i) => MG_COLORS[i % MG_COLORS.length]
+/* checks a partners list: names filled and unique, every % above 0, total exactly 100 */
+export function checkPartners(rows) {
+  const errors = {}
+  const seen = new Set()
+  rows.forEach((r, i) => {
+    const n = String(r.name ?? '').trim()
+    if (!n) errors[i] = 'اكتب الاسم'
+    else if (seen.has(n)) errors[i] = 'الاسم مكرر'
+    else if (!(Number(r.pct) > 0)) errors[i] = 'النسبة لازم تكون أكتر من صفر'
+    seen.add(n)
+  })
+  const total = rows.reduce((a, r) => a + (Number(r.pct) || 0), 0)
+  if (!rows.length) errors.total = 'لازم شريك إدارة واحد على الأقل'
+  else if (Math.round(total * 100) !== 10000) errors.total = `مجموع النسب ${+total.toFixed(2)}% ولازم يكون 100%`
+  return { errors, total }
 }
 
 /* past years, already split */

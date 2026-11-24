@@ -7,11 +7,13 @@ import CountNum from '../components/ui/CountNum.vue'
 import MoveDialog from '../components/safe/MoveDialog.vue'
 import CloseDayDialog from '../components/safe/CloseDayDialog.vue'
 import FishPricesDialog from '../components/dashboard/FishPricesDialog.vue'
-import { TODAY, TOTALS, TRADERS, USER, MANIFESTS, PRICES, CASH, CASHBOOK, FEED, RECEIVABLE, MONTH as NOV_DAYS, fmt } from '../data/demo.js'
+import { TODAY, TOTALS, TRADERS, USER, MANIFESTS, PRICES, KG_PER_BOX, CASH, CASHBOOK, FEED, RECEIVABLE, MONTH as NOV_DAYS, fmt } from '../data/demo.js'
 import { todayIn, todayOut, allMoves } from '../data/safe.js'
+import { isLate, lateBy, cycleOf } from '../data/traders.js'
 import { RECURRING, isPaid, dueIn } from '../data/expenses.js'
 import { TODAY as DAY, unmarkedToday } from '../data/staff.js'
 import { monthPnl, NOW, MONTHS } from '../data/reports.js'
+import { gradeColor } from '../utils/grades.js'
 
 // Home — "خط اليوم" (approved 2): one sentence, the day as a line from dawn to now with each truck where it arrived,
 // four numbers, and what needs you + today's prices.
@@ -48,6 +50,7 @@ const vsYesterday = computed(() => pct(TOTALS.commission, yesterday.value?.commi
 const todo = computed(() => {
   const list = []
   TRADERS.filter((t) => t.due > t.limit).forEach((t) => list.push({ key: 't' + t.name, tone: 'bad', title: `${t.name} فوق حدّه`, sub: `عليه ${fmt(t.due)} من ${fmt(t.limit)}`, to: `/traders/${encodeURIComponent(t.name)}`, act: 'الكشف' }))
+  TRADERS.filter((t) => t.due <= t.limit && isLate(t)).forEach((t) => list.push({ key: 'l' + t.name, tone: 'warn', title: `${t.name} متأخر عن موعد التحصيل`, sub: `${cycleOf(t).label} · متأخر ${lateBy(t)} يوم · عليه ${fmt(t.due)}`, to: `/traders/${encodeURIComponent(t.name)}`, act: 'الكشف' }))
   RECURRING.filter((r) => !isPaid(r) && dueIn(r) <= 3).forEach((r) => list.push({ key: 'r' + r.id, tone: dueIn(r) < 0 ? 'bad' : 'warn', title: `${r.name} ${dueIn(r) < 0 ? `متأخر ${-dueIn(r)} يوم` : dueIn(r) === 0 ? 'موعده اليوم' : `بعد ${dueIn(r)} يوم`}`, sub: `${fmt(r.amount)} ج`, to: '/expenses', act: 'ادفع' }))
   TOTALS.drafts.forEach((m) => list.push({ key: 'm' + m.id, tone: 'warn', title: `بيان ${m.supplier.replace('مزرعة ', '')} مفتوح`, sub: `باقي ${m.boxes - m.sold} بوكس`, to: `/sheet/${m.id}`, act: 'كمّل' }))
   if (unmarkedToday().length) list.push({ key: 'att', tone: 'info', title: `حضور ${unmarkedToday().length} عمال ما انسجّل`, sub: unmarkedToday().map((e) => e.name).join('، '), to: '/staff', act: 'سجّل' })
@@ -59,6 +62,7 @@ function doTodo(t) { if (t.action === 'close') closeOpen.value = true; else rout
 
 /* prices */
 const pricesAt = ref('05:40')
+const topPrice = computed(() => Math.max(1, ...PRICES.map((p) => p[1])))
 
 /* dialogs */
 const moveOpen = ref(false)
@@ -128,11 +132,16 @@ const pricesOpen = ref(false)
           <div v-else class="done"><AppIcon name="check" />كله تمام، ما في شي مستعجل اليوم.</div>
         </section>
         <section class="panel rise" style="--i:6">
-          <h3>أسعار اليوم <button type="button" class="edit" @click="pricesOpen = true"><AppIcon name="edit" />عدّل</button></h3>
-          <div class="prices">
-            <div v-for="([g, p], i) in PRICES" :key="g" class="pr" :style="{ '--i': i }"><span>{{ g }}</span><b class="num">{{ p }}<small>ج/ك</small></b></div>
+          <h3><span class="ph">أسعار اليوم<small class="num">{{ PRICES.length }} أصناف · آخر تعديل {{ pricesAt }}</small></span>
+            <button type="button" class="pedit" @click="pricesOpen = true"><AppIcon name="edit" />عدّل</button></h3>
+          <div class="plist">
+            <button v-for="([g, p], i) in PRICES" :key="g" type="button" class="pr" :style="{ '--i': i, '--c': gradeColor(i), '--w': (p / topPrice * 100) + '%' }" title="عدّل الأسعار" @click="pricesOpen = true">
+              <span class="pn"><i />{{ g }}</span>
+              <span class="pbar"><i /></span>
+              <span class="pv num"><b>{{ p }}<small>ج/ك</small></b><em>{{ fmt(p * KG_PER_BOX) }} البوكس</em></span>
+            </button>
           </div>
-          <p class="note num">آخر تعديل {{ pricesAt }} · الشيت بيعبّيها لحاله</p>
+          <p class="note"><AppIcon name="info" />الشيت بيعبّي هالأسعار لحاله، ولكل تاجر سعره الخاص إذا إله.</p>
         </section>
       </div>
 
@@ -211,17 +220,27 @@ a.truck:hover .tdot { transform: scale(1.15); }
 .go :deep(svg) { width: 14px; height: 14px; transition: transform .2s; } .r:hover .go :deep(svg) { transform: translateX(-3px); }
 .done { display: flex; align-items: center; gap: 8px; color: var(--color-positive); font-weight: 600; font-size: 13.5px; background: var(--pos-bg); border-radius: 12px; padding: 12px 14px; }
 .done :deep(svg) { width: 18px; height: 18px; }
-.edit { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color-primary-ink); cursor: pointer; }
-.edit :deep(svg) { width: 14px; height: 14px; } .edit:hover { text-decoration: underline; text-underline-offset: 3px; }
-.prices { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; }
-.pr { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; background: #f5f9f9; border-radius: 11px; padding: 8px 12px; font-size: 13px; animation: rise .4s cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(.4s + var(--i) * 40ms); }
-.pr span { color: var(--color-muted); } .pr b { font-size: 16px; color: var(--color-deep); } .pr b small { font-size: 10.5px; color: var(--color-muted); font-weight: 500; margin-inline-start: 3px; }
-.note { margin: 0; font-size: 11.5px; color: var(--color-muted); }
+.ph { display: grid; gap: 1px; } .ph small { font-size: 11.5px; font-weight: 500; color: var(--color-muted); }
+.pedit { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid rgb(14 116 144 / .28); background: #dbeff5; border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color-primary-ink); cursor: pointer; transition: border-color .15s, background .15s; }
+.pedit :deep(svg) { width: 14px; height: 14px; } .pedit:hover { border-color: var(--color-primary); background: #cfe8ef; }
+.plist { flex: 1; display: grid; gap: 4px; align-content: start; }
+.pr { display: grid; grid-template-columns: minmax(84px, auto) minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: right; padding: 6px 10px; border-radius: 12px; cursor: pointer; transition: background .15s;
+  animation: rise .4s cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(.4s + var(--i) * 40ms); }
+.pr:hover { background: #f3f8f9; }
+.pn { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--color-deep); white-space: nowrap; }
+.pn i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }
+.pbar { height: 6px; border-radius: 999px; background: #eef4f5; overflow: hidden; }
+.pbar i { display: block; height: 100%; width: var(--w); border-radius: inherit; background: linear-gradient(to left, var(--c), color-mix(in srgb, var(--c) 55%, #fff)); transform-origin: right; animation: grow .7s cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(.5s + var(--i) * 40ms); transition: width .4s; }
+.pv { display: grid; justify-items: end; line-height: 1.25; min-width: 70px; }
+.pv b { font-size: 16px; color: var(--color-deep); } .pv b small { font-size: 10.5px; color: var(--color-muted); font-weight: 500; margin-inline-start: 3px; }
+.pv em { font-style: normal; font-size: 10.5px; color: var(--color-muted); }
+.note { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--color-muted); background: #f5f9f9; border-radius: 10px; padding: 7px 10px; }
+.note :deep(svg) { width: 14px; height: 14px; flex: none; color: var(--color-primary); }
 
 @media (max-width: 900px) { .nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } .split { grid-template-columns: minmax(0, 1fr); } .sent { font-size: 16px; } .sent b { font-size: 21px; } }
 @media (max-width: 640px) { .tl { display: none; } .timeline { height: 80px; margin: 0 14px; } .track { top: 36px; } .now { top: 24px; } .truck { top: 26px; } }
 @media (prefers-reduced-motion: reduce) {
-  .rise, .r, .pr, .truck, .now, .cnt, .track i, .nbar i { animation: none; }
+  .rise, .r, .pr, .pbar i, .truck, .now, .cnt, .track i, .nbar i { animation: none; }
   .now::before, .truck.draft .tdot :deep(svg), .r.bad .dot { animation: none; }
 }
 </style>

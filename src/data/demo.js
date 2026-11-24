@@ -38,6 +38,25 @@ export const TRADERS = reactive([
 ])
 export const CASH_CUSTOMER = 'عميل نقدي'
 
+// per-trader terms: special price per kilo for some grades (others take the day's price), how often his credit is collected,
+// and his own account link + 4-digit code (he signs in to see only his statement and invoices)
+const TERMS_SEED = {
+  'الحاج محمود': { prices: { 'بلطي سوبر': 35, 'بلطي 1': 31 }, cycle: 'weekly' },
+  'أبو يوسف': { prices: { 'بلطي 1': 33, 'طبار': 42 }, cycle: 'weekly' },
+  'سوبر ماركت الأمانة': { prices: { 'بلطي 3': 25 }, cycle: 'monthly' },
+  'مطعم البحر': { prices: { 'بوري': 47, 'بلطي سوبر': 37 }, cycle: 'daily' },
+  'محمد الصياد': { cycle: 'biweekly' },
+}
+// fixed per phone so a link survives a refresh of the sample data
+const token = (phone) => Number(String(phone).replace(/\D/g, '')).toString(36)
+const last4 = (phone) => String(phone).replace(/\D/g, '').slice(-4)
+TRADERS.forEach((t) => Object.assign(t, { prices: {}, cycle: 'weekly', token: token(t.phone), code: last4(t.phone) }, TERMS_SEED[t.name]))
+/* the price per kilo this trader pays for a grade: his own price if he has one, else the day's price */
+export const priceFor = (trader, grade) => {
+  const t = TRADERS.find((x) => x.name === trader)
+  return (t && t.prices && t.prices[grade]) || priceOf(grade)
+}
+
 const sum = (rows, f) => rows.reduce((s, r) => s + (typeof f === 'function' ? f(r) : r[f]), 0)
 let nextId = 1
 
@@ -52,7 +71,7 @@ function draft(supplier, rate, asha, time, grades, lines) {
   return {
     id: nextId++, supplier, rate, asha, time, status: 'draft',
     grades: grades.map(([grade, boxes]) => ({ grade, boxes })),
-    lines: lines.map(([trader, grade, boxes, pay = 'credit']) => ({ id: nextId++, trader, grade, boxes, price: priceOf(grade), pay })),
+    lines: lines.map(([trader, grade, boxes, pay = 'credit']) => ({ id: nextId++, trader, grade, boxes, price: priceFor(trader, grade), pay })),
     get boxes() { return sum(this.grades, 'boxes') },
     get sold() { return sum(this.lines, 'boxes') },
     get gross() { return sum(this.lines, (l) => l.boxes * KG_PER_BOX * l.price) },
@@ -62,25 +81,30 @@ function draft(supplier, rate, asha, time, grades, lines) {
 }
 
 export const MANIFESTS = reactive([
-  approved('مزرعة الحاج سامر', 84, 70000, 5, 3, '05:42'),
-  approved('مزرعة أبو خليل', 60, 46800, 4, 2, '06:15'),
-  draft('مزرعة الشيخ عيد', 5, 4, '06:50',
+  // asha = what the agency spent on العشا for this manifest (ج), recorded as an expense under «العشا»
+  approved('مزرعة الحاج سامر', 84, 70000, 5, 350, '05:42'),
+  approved('مزرعة أبو خليل', 60, 46800, 4, 250, '06:15'),
+  draft('مزرعة الشيخ عيد', 5, 0, '06:50',
     [['بلطي سوبر', 30], ['بلطي 1', 30], ['بلطي 2', 25], ['بلطي 3', 15], ['بوري', 12], ['طبار', 8]],
     [['أبو يوسف', 'بلطي سوبر', 12], ['الحاج محمود', 'بلطي سوبر', 10], ['مطعم البحر', 'بلطي سوبر', 8],
       ['الحاج محمود', 'بلطي 1', 14], [CASH_CUSTOMER, 'بلطي 1', 12, 'cash'], ['أبو حسن العطار', 'بلطي 2', 20],
       ['سوبر ماركت الأمانة', 'بلطي 3', 12], ['مطعم البحر', 'بوري', 6], ['أبو يوسف', 'طبار', 4]]),
   approved('مزرعة النجار', 45, 33600, 3, 0, '07:20'),
-  draft('مزرعة الحاج رمضان', 4, 1, '08:05',
+  draft('مزرعة الحاج رمضان', 4, 0, '08:05',
     [['بلطي سوبر', 20], ['بلطي 1', 20], ['بلطي 2', 15], ['بوري', 10], ['طبار', 5]],
     [['الحاج محمود', 'بلطي سوبر', 15], ['أبو يوسف', 'بلطي 1', 10], [CASH_CUSTOMER, 'بلطي 2', 6, 'cash']]),
 ])
+// a seeded debt always covers what the trader took on credit today (so "his account before today's invoice" is never below zero)
+TRADERS.forEach((t) => {
+  const today = sum(MANIFESTS.flatMap((m) => m.lines.filter((l) => l.trader === t.name && l.pay === 'credit')), (l) => l.boxes * KG_PER_BOX * l.price)
+  if (t.due < today) t.due = today
+})
 
 export const TOTALS = reactive({
   get boxes() { return sum(MANIFESTS, 'boxes') },
   get sold() { return sum(MANIFESTS, 'sold') },
   get gross() { return sum(MANIFESTS, 'gross') },
   get commission() { return sum(MANIFESTS, 'commission') },
-  get asha() { return sum(MANIFESTS, 'asha') },
   get drafts() { return MANIFESTS.filter((m) => m.status === 'draft') },
   get unsold() { return this.boxes - this.sold },
 })
@@ -97,6 +121,8 @@ export const CASHBOOK = reactive({
   opening: { cash: 21400, vodafone: 6200, bank: 85000 },
   closedAt: null, // set when today is closed
   entries: [
+    { ...cashMove('05:42', 'out', 'expense', 'عشا بيان مزرعة الحاج سامر', 'cash', 350, 'من اعتماد البيان'), cat: 'asha' },
+    { ...cashMove('06:15', 'out', 'expense', 'عشا بيان مزرعة أبو خليل', 'cash', 250, 'من اعتماد البيان'), cat: 'asha' },
     cashMove('06:30', 'out', 'expense', 'فطور العمال', 'cash', 350, '', true),
     cashMove('07:05', 'out', 'expense', 'بنزين التروسيكل', 'cash', 600, '', true),
     cashMove('07:40', 'in', 'collect', 'مطعم البحر', 'cash', 5000, 'إيصال 1221'),
@@ -155,12 +181,8 @@ export const SUPPLIERS = reactive([
   { id: 6, name: 'مزرعة المنصورة', place: 'مطوبس', phone: '0120 440 7765', rate: 4, rating: 2, balance: -8000, weeks: [12, 9, 14, 8], token: 'z9w3mn',
     history: [mv('adv', 'سلفة', 'لعلاج السمك', 8000, '12 نوفمبر')] },
 ])
-// the dashboard's short list, always from the same suppliers
-export const SUPPLIER_BALANCES = reactive({
-  get rows() { return SUPPLIERS.filter((s) => s.balance).slice().sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)).slice(0, 4)
-    .map((s) => ({ name: s.name, amount: Math.abs(s.balance), side: s.balance > 0 ? 'له' : 'عليه', note: s.balance < 0 ? 'سلفة تحت الحساب' : '' })) },
-})
-
+// each farm signs in with its phone + a 4-digit code to see only its own statement and invoices
+SUPPLIERS.forEach((s) => { s.code = last4(s.phone) })
 // feed delivered to farms on credit at the factory price; settled on a set date with a markup (debit note)
 export const TODAY_DATE = new Date(2026, 10, 22)
 // factory price per ton for each feed type (editable from the feed page; new deliveries take the current price)
@@ -204,16 +226,6 @@ Object.defineProperties(DAYS[29], {
   boxes: { get: () => TOTALS.sold },
 })
 export const MONTH = DAYS.filter((d) => d.date.getMonth() === 10)
-
-export function buildAlerts() {
-  const m = TRADERS[0], late = TRADERS[2]
-  return [
-    m.due > m.limit && { tone: 'neg', icon: 'alert', title: `${m.name} تخطى حد الدين`, text: `عليه ${fmt(m.due)} والحد ${fmt(m.limit)}`, action: 'كشف الحساب', to: '/traders' },
-    TOTALS.drafts.length && { tone: 'warn', icon: 'clock', title: `${TOTALS.drafts.length} بيانات مسودة`, text: `باقي ${TOTALS.unsold} بوكس ما انباعوا`, action: 'افتحهم', to: '/sheet' },
-    { tone: 'warn', icon: 'feed', title: 'تسوية علف أبو خليل بعد 9 أيام', text: `${fmt(FEED[0].amount)} ج بتاريخ ${FEED[0].due}`, action: 'جهّز' },
-    { tone: 'neg', icon: 'alert', title: `${late.name} متأخر ${late.days} يوم`, text: `عليه ${fmt(late.due)} ج`, action: 'تواصل', to: '/traders' },
-  ].filter(Boolean)
-}
 
 export function fmt(n) {
   return Number(n).toLocaleString('en-US')

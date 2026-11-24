@@ -48,12 +48,12 @@ function printIt() { window.print() }
 function onDeleted() { router.push('/suppliers') }
 async function copyLink() {
   const url = shareUrl(s.value)
-  try { await navigator.clipboard.writeText(url); toast('انسخ رابط الكشف', `ابعته لـ${s.value.name}، بيشوف بياناته وفواتيره بدون حساب`) }
+  try { await navigator.clipboard.writeText(url); toast('انسخ رابط الكشف', `ابعته لـ${s.value.name} مع كود الدخول ${s.value.code}، وبيشوف كشفه وفواتيره بس`) }
   catch { window.prompt('انسخ الرابط:', url) }
 }
 function whatsapp() {
   const x = s.value
-  const text = `السلام عليكم ${x.name}\nرصيدك عندنا: ${fmt(Math.abs(x.balance))} ج ${side(x.balance)}\nكشف حسابك وفواتيرك على الرابط:\n${shareUrl(x)}`
+  const text = `السلام عليكم ${x.name}\nرصيدك عندنا: ${fmt(Math.abs(x.balance))} ج ${side(x.balance)}\nكشف حسابك وفواتيرك على الرابط:\n${shareUrl(x)}\nكود الدخول: ${x.code}\n(أو من صفحة الدخول: «تاجر أو مورد؟» برقم تلفونك والكود)`
   window.open(`https://wa.me/2${x.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
 }
 </script>
@@ -71,7 +71,7 @@ function whatsapp() {
           <h1>{{ s.name }}
             <StatusPill :tone="s.balance > 0 ? 'info' : s.balance < 0 ? 'bad' : 'ok'">{{ side(s.balance) }}</StatusPill>
           </h1>
-          <p class="num"><AppIcon name="phone" />{{ s.phone }} · {{ s.place }} · <span class="stars">{{ '★'.repeat(s.rating) }}<i>{{ '★'.repeat(5 - s.rating) }}</i></span></p>
+          <p class="num"><AppIcon name="phone" />{{ s.phone }} · {{ s.place }} · <span class="stars">{{ '★'.repeat(s.rating) }}<i>{{ '★'.repeat(5 - s.rating) }}</i></span> · <span class="kcode" title="بيدخل فيه على كشفه"><AppIcon name="key" />كود الدخول {{ s.code }}</span></p>
         </div>
         <div class="actions">
           <SoftButton icon="link" @click="copyLink">رابط الكشف</SoftButton>

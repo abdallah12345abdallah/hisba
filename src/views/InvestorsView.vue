@@ -12,7 +12,7 @@ import InvestorForm from '../components/investors/InvestorForm.vue'
 import SplitDialog from '../components/investors/SplitDialog.vue'
 import DistributeDialog from '../components/investors/DistributeDialog.vue'
 import { fmt } from '../data/demo.js'
-import { INVESTORS, YEAR, YEARS, DONE, SPLIT, TERMS, MONTHS, capitalOf, weightedOf, capitalByMonth, totalCapital, totalWeighted, split, profitYTD, profitProjected, daysToSplit, shareUrl } from '../data/investors.js'
+import { INVESTORS, YEAR, YEARS, DONE, SPLIT, mgColor, TERMS, MONTHS, capitalOf, weightedOf, capitalByMonth, totalCapital, totalWeighted, split, profitYTD, profitProjected, daysToSplit, shareUrl } from '../data/investors.js'
 import { toast } from '../composables/useToast.js'
 
 // Shareholders — same pattern: figure cards, then the profit simulator (slide the year's profit, every share follows,
@@ -25,7 +25,7 @@ const sim = ref(proj)
 const s = computed(() => split(sim.value))
 const SHADES = ['#0e7490', '#1b8aa6', '#3aa3b9', '#61b9c9', '#8ccdd8', '#b3dfe6', '#d2edf1']
 const segs = computed(() => [
-  ...s.value.managers.map((m, i) => ({ key: 'm' + i, name: m.name, sub: `إدارة ${m.pct}%`, amount: m.get, color: i ? '#f8c77d' : '#f5a53a', mg: true })),
+  ...s.value.managers.map((m, i) => ({ key: 'm' + i, name: m.name, sub: `إدارة ${m.pct}%`, amount: m.get, color: mgColor(i), mg: true })),
   ...s.value.rows.slice().sort((a, b) => b.get - a.get).map((r, i) => ({ key: r.x.id, name: r.x.name, sub: `${r.pct.toFixed(1)}% · ${TERMS[r.x.terms].label}`, amount: r.get, color: SHADES[i % SHADES.length], id: r.x.id })),
 ])
 const delta = computed(() => Math.round(((sim.value - proj) / proj) * 100))

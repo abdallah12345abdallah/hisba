@@ -11,9 +11,16 @@ An IGMA product (owner: Amr Adel, Egypt + KSA) sold to **fish-market commission 
 each client is one agency. Arabic, right-to-left, Egyptian/Levantine market vocabulary.
 
 Business rules (from the client meeting):
-- The broker sells a farm's fish to traders and takes a **commission %** per supplier (3/4/5%). Only a **purchase invoice**
-  goes to the farm (gross sales − commission = net). No sales invoice to traders. Everything in **kg**, sold by the **box**
-  (`KG_PER_BOX = 25`). No stock: all is sold the same day. Leftover kilos (العشا) belong to the agency.
+- The broker sells a farm's fish to traders and takes a **commission %** per supplier (3/4/5%). **Two invoices**: a
+  **purchase invoice** to the farm per manifest (gross sales − commission = net) and a **sales invoice** to each trader for
+  the day (everything he bought from every manifest, cash part, credit part, balance before/after). Everything in **kg**,
+  sold by the **box** (`KG_PER_BOX = 25`); box counts use −/+ **and** can be typed. No stock: all is sold the same day.
+- **العشا is an expense, not income**: entered in ج when a manifest is approved and recorded under the expense category
+  «العشا» (out of the drawer); reopening the manifest removes it until it is approved again. It is not on the farm invoice.
+- **Prices**: each fish grade has the day's price; **each trader can have his own price per grade** (`t.prices`), used
+  automatically on the sheet and editable per sale (with «ثبّته سعر إله»).
+- **Collection** of credit: per trader cycle (يومي / أسبوعي / كل أسبوعين / شهري, `t.cycle`); late = owes and the oldest
+  unpaid invoice is older than his cycle → «متأخر» pill + dashboard to-do. (Client did not say the usual cycle; default weekly.)
 - **Sale sheet** (شيت البيع / بيان): a truck arrives with boxes per grade (بلطي سوبر/1/2/3/4, شر، بوري، طبار…). Boxes are
   sold to traders; when every box is sold the manifest is **approved** → locked, invoice numbered, farm credited, invoice
   printed / sent on WhatsApp. Reopening an approved manifest needs a reason and is logged.
@@ -23,9 +30,14 @@ Business rules (from the client meeting):
 - **Safe**: three wallets (الدرج cash, فودافون كاش, البنك). Every money move from every page lands here. Daily close counts
   the drawer by Egyptian notes.
 - **Staff**: monthly salaries (owner and partner included) and day workers paid by attendance; advances deducted on pay.
-- **Shareholders**: yearly profit split on 1/1 — management share (default 25%, split owner/partner 60/40), the rest over
-  capital weighted by months; per-shareholder terms 100% or 50/50 (half goes to management). Paid cash or reinvested.
-- No taxes. Roles: صاحب الحلقة، شريك، محاسب، كاتب الميزان.
+- **Shareholders**: yearly profit split on 1/1 — management share (default 25%, editable) divided between **any number of
+  management partners, each with his own %** (sum 100, `SPLIT.partners`); the rest over capital weighted by the months the
+  money worked (a shareholder who joins mid-year gets his months only); per-shareholder terms 100% or 50/50 (half goes to
+  management). Paid cash or reinvested.
+- No taxes. Staff roles: صاحب الحلقة، شريك، محاسب، كاتب الميزان. **Traders and farms also use the system**: each one signs in
+  with phone + a 4-digit code (or opens his private link + code) and sees **only his own** statement and invoices.
+- **The market's internet drops**: the app must keep working offline (service worker + "مش متصل" badge + pending count;
+  the real offline queue/sync is for the backend team — see `src/data/sync.js`).
 
 **Backend**: not built here. The backend team takes the project after the frontend and wires real data. Do **not** add
 persistence/back-end on your own; all data is sample data in memory (`src/data/*.js`). A refresh resets everything
@@ -73,7 +85,7 @@ src/style.css          tokens + global components (cards, buttons, tabs, tables,
 src/components/AppShell.vue   sidebar (pages filtered by can()), user + logout; "solo" mode (one page only) → no sidebar, slim top bar
 src/components/AppIcon.vue    our icon names → Lucide. Add new icons HERE, never inline SVG paths
 src/components/ui/     shared: SoftButton, AppModal, ConfirmDialog, FilledInput, AmountField, SearchPill, SelectMenu,
-                       StatusPill, ToggleSwitch, PagerBar, EmptyState, BarChart, CountNum, SuccessDialog, ToastHost
+                       StatusPill, ToggleSwitch, PagerBar, EmptyState, CountNum, SuccessDialog, ToastHost
 src/components/<area>/ dialogs and parts per page (sheet, traders, suppliers, feed, safe, expenses, staff, investors, reports, settings, dashboard)
 src/composables/       useToast (toast()), useCountUp
 src/utils/grades.js    grade colours (GRADE_COLORS, gradeColor(i))
@@ -92,7 +104,11 @@ src/views/             one file per page
   (weighted capital, split(), distribute), `reports.js` (**single source of the year's profit**: Jan–Oct seeded, Nov live;
   investors read `yearNets()`), `auth.js` (USERS with 4-digit PIN, ROLES + perms, SESSION, can(), signIn with 5-try / 30s
   lock, homeFor), `audit.js` (AUDIT log + `log(kind,title,detail,link)`), `settings.js` (SETTINGS defaults, grade/category
-  editing, saveSplit).
+  editing, saveSplit), `portal.js` (traders'/farms' own access: PORTAL in localStorage, portalSignIn(phone, code),
+  unlockWithCode, 5-try lock), `sync.js` (SYNC online/pending, `markChange()` called from addMove / addLine / removeLine / log).
+- `traders.js` also holds: CYCLES/isLate/lateBy, ownPrices/setTraderPrice(s), the sales invoice (saleInvoice, buyersToday,
+  saleInvoiceText, whatsappSaleInvoice) and the account link/code (traderShareUrl, renewTraderToken, resetTraderCode).
+  `priceFor(trader, grade)` lives in `demo.js`.
 - Cross-page effects are wired: sales → trader debt + drawer cash; approve → farm credit; trader payments / farm payouts /
   feed cash / expenses / salaries / capital / profits → safe moves (with a link back from the safe row).
 - Sensitive changes are logged to the audit (approve, reopen, line edits on reopened manifests, price changes, safe deletes,
@@ -101,8 +117,11 @@ src/views/             one file per page
 ### Routes
 `/login` (bare) · `/` dashboard · `/sheet/:id?` · `/traders`, `/traders/:name` · `/suppliers`, `/suppliers/:id` ·
 `/feed`, `/feed/settlements`, `/feed/:name` · `/safe`, `/safe/closes` · `/expenses` · `/staff`, `/staff/:id` ·
-`/investors`, `/investors/:id` · `/reports` · `/audit` · `/settings` · share links (bare, public): `/s/:token` farm statement,
-`/i/:token` shareholder page.
+`/investors`, `/investors/:id` · `/reports` · `/audit` · `/settings` · own pages (bare, public, behind a 4-digit code
+`CodeGate`): `/s/:token` farm, `/t/:token` trader · `/i/:token` shareholder page (no code). A trader/farm signed in on the
+device who opens `/login` goes straight back to his page («خروج» signs him out).
+
+Trial trader/farm codes = the last 4 digits of their phone (e.g. الحاج محمود 0100 234 5678 → 5678).
 
 Trial users (PINs shown on the login keys while `SHOW_PINS = true` in `LoginView.vue` — **set false before client handover**):
 الحاج محمود صاحب الحلقة 1111 · الحاج سعيد شريك 2222 · أحمد محاسب 1234 · مصطفى كمال كاتب الميزان 5555.
@@ -151,7 +170,7 @@ Trial users (PINs shown on the login keys while `SHOW_PINS = true` in `LoginView
 
 ## 5. Pages — current approved state
 
-- **Login** (`LoginView`, bare): two columns on teal "water" (swells + bubbles). One side the **scale**: steel pan
+- **Login** (`LoginView`, bare; under the keypad a «تاجر أو مورد؟» button → `PortalSignIn` phone + code): two columns on teal "water" (swells + bubbles). One side the **scale**: steel pan
   ("MAX 300kg · d=50g"), dark bezel with LEDs ZERO/NET/STABLE/LOCK, green LCD (the digit just typed shows briefly then «*»,
   empty «-»), PLU key per user (2 columns, initial avatar, trial PIN pill), keypad with orange «تارا» clear + backspace,
   keyboard input, lock state amber, success shows OK/WELCOME. Other side: logo, «بتبيع، وحِسبة بتحسب.» and a tilted thermal
@@ -171,7 +190,9 @@ Trial users (PINs shown on the login keys while `SHOW_PINS = true` in `LoginView
   Approval → `InvoiceNote` (paper invoice, print window, WhatsApp) ; `ApprovedDialog` lists locked manifests (reopen with
   reason, only for owner/partner); reopened manifest shows an amber band.
 - **Traders / Suppliers / Feed / Safe / Expenses / Staff / Shareholders**: the standard pattern above, each with its own
-  detail page and full actions. Specials: suppliers have a read-only share link; feed has settlements archive + debit notes;
+  detail page and full actions. Specials: trader page has «فاتورة اليوم», «أسعاره» (TraderPricesDialog) and «حسابه على
+  حِسبة» (link + code, send/renew); the sheet's sales table has «فواتير التجار» (SaleInvoicesDialog); suppliers have a
+  share link + code; feed has settlements archive + debit notes;
   safe has the "يومية الدرج" running-balance tree + day close by notes; expenses header = one meter (spent vs budget with
   "المفروض لليوم" pace marker) + the most urgent fixed expense + `RecurringDialog`; staff has today's roll call (one row per
   worker: name + three small ✓ ½ ✗ buttons) and a Saturday-start attendance calendar; owner/partner page shows a salary ring;

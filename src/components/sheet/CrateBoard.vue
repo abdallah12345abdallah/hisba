@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { TRADERS, CASH_CUSTOMER, KG_PER_BOX, priceOf, fmt } from '../../data/demo.js'
+import { TRADERS, CASH_CUSTOMER, KG_PER_BOX, priceOf, priceFor, fmt } from '../../data/demo.js'
+import { setTraderPrice } from '../../data/traders.js'
 import { gradeColor } from '../../utils/grades.js'
 import AppIcon from '../AppIcon.vue'
 
@@ -35,9 +36,14 @@ const picked = ref(null) // grade name in hand
 const target = ref(null) // trader whose popover is open
 const qty = ref(1)
 const pay = ref('credit')
+const price = ref(0) // ج per kilo for this sale: the trader's own price for the grade, else the day's price; editable
+const keep = ref(false) // also save the typed price as this trader's price for the grade
 
 const crate = computed(() => crates.value.find((c) => c.grade === picked.value))
-const amount = computed(() => (crate.value ? qty.value * KG_PER_BOX * crate.value.price : 0))
+const amount = computed(() => (crate.value ? qty.value * KG_PER_BOX * (Number(price.value) || 0) : 0))
+const ownPrice = computed(() => (targetTrader.value && crate.value ? targetTrader.value.prices?.[crate.value.grade] : null))
+const priceTag = computed(() => (Number(price.value) !== (ownPrice.value || crate.value?.price) ? 'سعر معدّل' : ownPrice.value ? 'سعره الخاص' : 'سعر اليوم'))
+const canKeep = computed(() => targetTrader.value && crate.value && Number(price.value) > 0 && Number(price.value) !== (ownPrice.value || crate.value.price))
 const targetTrader = computed(() => TRADERS.find((t) => t.name === target.value))
 const payNow = computed(() => (target.value === CASH_CUSTOMER ? 'cash' : pay.value))
 const goesOver = computed(() => payNow.value === 'credit' && targetTrader.value && targetTrader.value.due + amount.value > targetTrader.value.limit)
@@ -58,7 +64,7 @@ watch(() => crates.value.map((c) => c.rem), (now, before) => {
 })
 
 function pick(g) { picked.value = picked.value === g ? null : g; target.value = null }
-function open(name) { if (!picked.value || target.value) return; target.value = name; qty.value = 1; pay.value = 'credit' }
+function open(name) { if (!picked.value || target.value) return; target.value = name; qty.value = 1; pay.value = 'credit'; price.value = priceFor(name, picked.value); keep.value = false }
 function step(d) { qty.value = Math.max(1, Math.min((Number(qty.value) || 0) + d, crate.value?.rem ?? 1)) }
 /* typed counts are kept between 1 and what is left of the grade */
 function fixQty() { qty.value = Math.max(1, Math.min(Math.round(Number(qty.value) || 1), crate.value?.rem ?? 1)) }
@@ -68,7 +74,9 @@ watch(target, (t) => { if (t) nextTick(() => qtyIn.value?.[0]?.focus?.() ?? qtyI
 function sell() {
   fixQty()
   const g = crate.value
-  emit('sell', { trader: target.value, grade: g.grade, boxes: qty.value, price: g.price, pay: payNow.value })
+  const p = Number(price.value) > 0 ? Number(price.value) : priceFor(target.value, g.grade)
+  if (keep.value && canKeep.value) setTraderPrice(targetTrader.value, g.grade, p)
+  emit('sell', { trader: target.value, grade: g.grade, boxes: qty.value, price: p, pay: payNow.value })
   target.value = null
   if (g.rem - qty.value <= 0) picked.value = null
 }
@@ -127,7 +135,7 @@ onBeforeUnmount(cancel)
             <span v-else class="done"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>خلص</span>
           </span>
           <span v-if="c.rem" class="pull" aria-hidden="true"><AppIcon name="next" /></span>
-          <span v-if="hint && c.grade === firstLive" class="hint" aria-hidden="true"><AppIcon name="pointhand" />اسحبني لعند التاجر</span>
+          <span v-if="hint && c.grade === firstLive" class="crhint" aria-hidden="true"><AppIcon name="pointhand" />اسحبني لعند التاجر</span>
           <span class="pile" aria-hidden="true">
             <i v-for="i in Math.min(c.rem, 12)" :key="i" :style="{ '--i': i - 1 }" />
             <i v-for="j in leaving[c.grade] || 0" :key="'go' + j" class="go" />
@@ -171,6 +179,8 @@ onBeforeUnmount(cancel)
                 <input ref="qtyIn" v-model.number="qty" class="qin num" type="number" inputmode="numeric" min="1" :max="crate.rem" dir="ltr" aria-label="عدد البوكسات" @focus="$event.target.select()" @blur="fixQty" @keydown.enter.prevent="fixQty(); sell()" />
                 <button type="button" aria-label="زائد" :disabled="qty >= crate.rem" @click="step(1)">+</button>
               </div>
+              <label class="prow"><span>سعر الكيلو</span><input v-model.number="price" class="pin num" type="number" inputmode="decimal" min="0" step="0.5" dir="ltr" aria-label="سعر الكيلو" @focus="$event.target.select()" @keydown.enter.prevent="fixQty(); sell()" /><span>ج</span><em :class="{ own: priceTag === 'سعره الخاص', mod: priceTag === 'سعر معدّل' }">{{ priceTag }}</em></label>
+              <label v-if="canKeep" class="keep"><input v-model="keep" type="checkbox" />ثبّته سعر إله لـ{{ crate.grade }}</label>
               <small class="num">{{ fmt(qty * KG_PER_BOX) }} كجم · {{ fmt(amount) }} ج<template v-if="goesOver"> · فوق الحد!</template></small>
               <div v-if="p.name !== CASH_CUSTOMER" class="paysw">
                 <span>آجل</span>
@@ -266,7 +276,7 @@ onBeforeUnmount(cancel)
 .tray .ph { color: #8a9a97; font-size: 12px; align-self: center; }
 .drop.ready:hover .tray, .drop.over .tray { background: #eaf6f8; }
 
-.qpop { position: absolute; inset: 6px; z-index: 3; background: linear-gradient(180deg, #f3fafb, #e6f4f7); color: var(--color-ink); border-radius: 12px; padding: 12px;
+.qpop { position: absolute; inset: 6px 6px auto; min-height: calc(100% - 12px); z-index: 3; background: linear-gradient(180deg, #f3fafb, #e6f4f7); color: var(--color-ink); border-radius: 12px; padding: 12px;
   display: grid; gap: 10px; align-content: center; box-shadow: inset 0 0 0 1.5px #b9dde5, 0 14px 30px -18px rgb(11 59 69 / .55); }
 .qpop small { text-align: center; color: var(--color-muted); font-size: 12px; }
 .qpop small:first-child { color: var(--color-primary-ink); font-weight: 600; font-size: 13px; }
@@ -279,6 +289,13 @@ onBeforeUnmount(cancel)
 .qin { width: 78px; height: 48px; border: 0; border-radius: 12px; background: #fff; box-shadow: inset 0 0 0 1.5px #d5e3e5; font: inherit; font-size: 30px; font-weight: 700; text-align: center; color: var(--color-deep); outline: 0; -moz-appearance: textfield; appearance: textfield; }
 .qin:focus { box-shadow: inset 0 0 0 2px var(--color-primary); }
 .qin::-webkit-outer-spin-button, .qin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.prow { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: var(--color-muted); }
+.pin { width: 70px; height: 34px; border: 0; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1.5px #d5e3e5; font: inherit; font-size: 16px; font-weight: 700; text-align: center; color: var(--color-deep); outline: 0; -moz-appearance: textfield; appearance: textfield; }
+.pin:focus { box-shadow: inset 0 0 0 2px var(--color-primary); }
+.pin::-webkit-outer-spin-button, .pin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.prow em { font-style: normal; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #e7eff0; color: var(--color-muted); }
+.prow em.own { background: var(--color-primary-pale); color: var(--color-primary-ink); } .prow em.mod { background: var(--warn-bg); color: var(--warn-ink); }
+.keep { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--color-primary-ink); cursor: pointer; } .keep input { accent-color: var(--color-primary); width: 15px; height: 15px; }
 .paysw { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; color: var(--color-muted); }
 .sw { width: 50px; height: 28px; border-radius: 999px; border: 0; background: #c9dcdc; position: relative; cursor: pointer; transition: background .2s; }
 .sw::after { content: ""; position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .2); transition: transform .2s; }
@@ -306,10 +323,10 @@ onBeforeUnmount(cancel)
 .crate:active:not(:disabled) { cursor: grabbing; transform: scale(.98); }
 .crate.nudge { animation: nudge 3.2s ease-in-out 1s infinite; }
 @keyframes nudge { 0%, 70%, 100% { transform: none; } 76% { transform: translateX(-7px) rotate(-1.2deg); } 82% { transform: translateX(0); } 88% { transform: translateX(-4px) rotate(-.6deg); } }
-.hint { position: absolute; z-index: 3; top: -14px; inset-inline-end: 10px; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--color-deep); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap;
+.crhint { position: absolute; z-index: 3; top: -14px; inset-inline-end: 10px; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--color-deep); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap;
   box-shadow: 0 10px 20px -10px rgb(11 59 69 / .8); animation: hint-in .5s cubic-bezier(.3, 1.4, .5, 1) .6s both; }
-.hint::after { content: ""; position: absolute; bottom: -5px; inset-inline-end: 22px; width: 10px; height: 10px; background: var(--color-deep); transform: rotate(45deg); border-radius: 2px; }
-.hint :deep(svg) { width: 15px; height: 15px; animation: point 1.4s ease-in-out infinite; }
+.crhint::after { content: ""; position: absolute; bottom: -5px; inset-inline-end: 22px; width: 10px; height: 10px; background: var(--color-deep); transform: rotate(45deg); border-radius: 2px; }
+.crhint :deep(svg) { width: 15px; height: 15px; animation: point 1.4s ease-in-out infinite; }
 @keyframes hint-in { from { opacity: 0; transform: translateY(6px) scale(.9); } }
 @keyframes point { 50% { transform: translateX(-5px) rotate(-12deg); } }
 .drophere { display: inline-flex; align-items: center; gap: 6px; color: var(--color-primary-ink) !important; font-weight: 600; }
@@ -317,7 +334,7 @@ onBeforeUnmount(cancel)
 @keyframes drop-bob { 50% { transform: translateY(4px); } }
 .drop.ready .tray { box-shadow: inset 0 0 0 1.5px rgb(14 116 144 / .25); animation: tray-pulse 1.6s ease-in-out infinite; }
 @keyframes tray-pulse { 50% { box-shadow: inset 0 0 0 1.5px rgb(14 116 144 / .55); } }
-@media (prefers-reduced-motion: reduce) { .crate.nudge, .hint, .hint :deep(svg), .drophere :deep(svg), .drop.ready .tray { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .crate.nudge, .crhint, .crhint :deep(svg), .drophere :deep(svg), .drop.ready .tray { animation: none; } }
 .crate-ghost :deep(svg) { width: 18px; height: 18px; vertical-align: -4px; margin-inline-end: 6px; }
 /* persistent drag cues */
 .howto { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; height: 22px; padding: 0 9px; border-radius: 999px; background: rgb(14 116 144 / .1); color: var(--color-primary-ink); font-size: 11.5px; font-weight: 700; }

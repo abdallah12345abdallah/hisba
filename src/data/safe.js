@@ -1,5 +1,6 @@
 // The safe: every movement of money across the three wallets, manual entries, transfers, and closing the day.
 import { CASHBOOK, WALLETS, walletBalance, sheetCashMoves } from './demo.js'
+import { markChange } from './sync.js'
 
 export const SOURCES = {
   sale: { label: 'بيع نقدي', icon: 'sheet' },
@@ -33,6 +34,7 @@ export function addMove({ dir, src, party, method = 'cash', amount, note = '', t
   const e = { id: ++seq, time: nowTime(), dir, src, party, method, amount, note, manual }
   if (dir === 'move') e.to = to
   CASHBOOK.entries.push(e)
+  markChange()
   return () => removeMove(e)
 }
 export function removeMove(e) {

@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import '@fontsource/share-tech-mono/latin-400.css'
 import AppIcon from '../components/AppIcon.vue'
+import PortalSignIn from '../components/portal/PortalSignIn.vue'
 import { AGENCY } from '../data/demo.js'
 import { USERS, roleOf, signIn, lockedFor, homeFor } from '../data/auth.js'
 import { toast } from '../composables/useToast.js'
@@ -60,12 +61,15 @@ function submit() {
 function tick() { clearInterval(timer); timer = setInterval(() => { lock.value = lockedFor(); if (!lock.value) clearInterval(timer) }, 500) }
 const AR = '٠١٢٣٤٥٦٧٨٩'
 function onKey(e) {
+  if (portalOpen.value || e.target?.closest?.('input, textarea')) return // typing in the traders' sign-in, not on the scale
   if (/^[0-9]$/.test(e.key)) press(e.key)
   else if (AR.includes(e.key)) press(String(AR.indexOf(e.key)))
   else if (e.key === 'Backspace') back()
   else if (e.key === 'Escape') tare()
 }
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3']
+/* traders and farms sign in apart, with phone + code */
+const portalOpen = ref(false)
 // trial period only: show each person's PIN on their key. Set to false before handing the app to the client.
 const SHOW_PINS = true
 const plu = (i) => `PLU ${String(i + 1).padStart(2, '0')}`
@@ -168,6 +172,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInter
             <button type="button" class="zero" :disabled="!!lock" @click="press('0')">0</button>
           </div>
           <small class="foot">بتقدر تكتب من الكيبورد · نسيت الرقم؟ صاحب الحلقة بيغيّره من الإعدادات</small>
+          <button type="button" class="portal" @click="portalOpen = true"><AppIcon name="key" /><span><b>تاجر أو مورد؟</b><small>ادخل برقم تلفونك والكود وشوف حسابك</small></span><AppIcon name="next" /></button>
         </div>
         <span class="feet" aria-hidden="true"><i /><i /></span>
       </main>
@@ -187,6 +192,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInter
         </article>
       </aside>
     </div>
+    <PortalSignIn v-model="portalOpen" />
   </div>
 </template>
 
@@ -263,6 +269,10 @@ header { display: flex; justify-content: space-between; align-items: center; gap
 .keys .zero { grid-area: 4 / 1 / 5 / 4; }
 .keys.off { filter: grayscale(.5); }
 .foot { text-align: center; font-size: 11.5px; color: var(--color-muted); }
+.portal { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid #9fd0dc; background: var(--color-primary-pale); color: var(--color-primary-ink); border-radius: 14px; padding: 9px 14px; font: inherit; text-align: right; cursor: pointer; margin-top: -6px; transition: border-color .15s, transform .15s; }
+.portal:hover { border-color: var(--color-primary); } .portal:active { transform: scale(.99); }
+.portal span { flex: 1; } .portal b { display: block; font-size: 13.5px; } .portal small { font-size: 11.5px; color: var(--color-muted); }
+.portal :deep(svg) { width: 18px; height: 18px; flex: none; }
 
 /* ===== story ===== */
 .story { position: relative; z-index: 2; color: #fff; display: grid; gap: 18px; align-content: center; animation: in .7s cubic-bezier(.2, .9, .25, 1) .15s both; }

@@ -12,7 +12,7 @@ import TraderForm from '../components/traders/TraderForm.vue'
 import ImportDialog from '../components/traders/ImportDialog.vue'
 import PagerBar from '../components/ui/PagerBar.vue'
 import { TRADERS, fmt } from '../data/demo.js'
-import { isOver, COLLECTED } from '../data/traders.js'
+import { isOver, isLate, lateBy, cycleOf, COLLECTED } from '../data/traders.js'
 import { toast } from '../composables/useToast.js'
 
 // Traders — "بطاقات" (approved ج): the key figures on top, then a card per trader with its debt, last buy, last payment,
@@ -22,7 +22,7 @@ const router = useRouter()
 /* top figures */
 const total = computed(() => TRADERS.reduce((s, t) => s + t.due, 0))
 const overCount = computed(() => TRADERS.filter(isOver).length)
-const lateSum = computed(() => TRADERS.filter((t) => t.days > 30).reduce((s, t) => s + t.due, 0))
+const lateSum = computed(() => TRADERS.filter((t) => isLate(t)).reduce((s, t) => s + t.due, 0))
 const collectedWeek = computed(() => COLLECTED.week)
 const LAST_WEEK = COLLECTED.lastWeek
 
@@ -37,7 +37,7 @@ const tops = computed(() => {
     { key: 'all', label: 'عليهم كلهم', icon: 'traders', tone: 'teal', value: fmt(total.value), unit: 'ج', share: 100, sub: `على ${owing} من ${TRADERS.length} تجار` },
     { key: 'over', label: 'فوق الحد', icon: 'alert', tone: 'red', value: overCount.value === 1 ? 'تاجر واحد' : `${overCount.value} تجار`, share: share(overSum),
       sub: firstOver ? `${firstOver.name} · فوقه بـ ${fmt(firstOver.due - firstOver.limit)}` : 'ولا حدا فوق الحد' },
-    { key: 'late', label: 'متأخر أكتر من شهر', icon: 'clock', tone: 'amber', value: fmt(lateSum.value), unit: 'ج', share: share(lateSum.value), sub: `${Math.round(share(lateSum.value))}% من كل الدين` },
+    { key: 'late', label: 'متأخر عن موعد التحصيل', icon: 'clock', tone: 'amber', value: fmt(lateSum.value), unit: 'ج', share: share(lateSum.value), sub: `${Math.round(share(lateSum.value))}% من كل الدين` },
     { key: null, label: 'انقبض هالأسبوع', icon: 'cash', tone: 'green', value: fmt(collectedWeek.value), unit: 'ج', share: Math.min(100, (collectedWeek.value / (collectedWeek.value + total.value)) * 100),
       sub: `${growth >= 0 ? '+' : ''}${growth}% عن الأسبوع الماضي` },
   ]
@@ -50,12 +50,12 @@ const filter = ref('all')
 const FILTERS = computed(() => [
   { value: 'all', label: 'كل التجار', hint: TRADERS.length },
   { value: 'over', label: 'فوق الحد', hint: TRADERS.filter(isOver).length },
-  { value: 'late', label: 'متأخرين أكتر من شهر', hint: TRADERS.filter((t) => t.days > 30).length },
+  { value: 'late', label: 'متأخرين عن موعدهم', hint: TRADERS.filter((t) => isLate(t)).length },
   { value: 'clear', label: 'خالصين', hint: TRADERS.filter((t) => !t.due).length },
 ])
 const list = computed(() => TRADERS
   .filter((t) => !q.value || t.name.includes(q.value.trim()))
-  .filter((t) => filter.value === 'all' || (filter.value === 'over' && isOver(t)) || (filter.value === 'late' && t.days > 30) || (filter.value === 'clear' && !t.due))
+  .filter((t) => filter.value === 'all' || (filter.value === 'over' && isOver(t)) || (filter.value === 'late' && isLate(t)) || (filter.value === 'clear' && !t.due))
   .slice().sort((a, b) => b.due - a.due))
 /* cards or table (small screens: always cards), and pages */
 const view = ref('table')
@@ -81,7 +81,7 @@ const size = ref(10)
 watch([q, filter, size], () => { page.value = 1 })
 const paged = computed(() => list.value.slice((page.value - 1) * size.value, page.value * size.value))
 const pct = (t) => Math.min(100, (t.due / t.limit) * 100)
-const stateOf = (t) => (!t.due ? 'clear' : isOver(t) ? 'over' : t.days > 30 ? 'late' : 'fine')
+const stateOf = (t) => (!t.due ? 'clear' : isOver(t) ? 'over' : isLate(t) ? 'late' : 'fine')
 
 /* open the trader's account page, or receive a payment here */
 const openTrader = (t) => router.push(`/traders/${encodeURIComponent(t.name)}`)
@@ -97,8 +97,8 @@ function editTrader(t) { editFor.value = t; formOpen.value = true }
 const importOpen = ref(false)
 function onAdded() { q.value = ''; filter.value = 'all' }
 function exportList() {
-  const head = ['الاسم', 'التلفون', 'عليه', 'الحد', 'عمر الدين (يوم)', 'آخر شرا', 'آخر دفعة']
-  const rows = list.value.map((t) => [t.name, t.phone, t.due, t.limit, t.days, t.lastBuy, t.lastPay])
+  const head = ['الاسم', 'التلفون', 'عليه', 'الحد', 'عمر الدين (يوم)', 'التحصيل', 'آخر شرا', 'آخر دفعة']
+  const rows = list.value.map((t) => [t.name, t.phone, t.due, t.limit, t.days, cycleOf(t).label, t.lastBuy, t.lastPay])
   const csv = '\uFEFF' + [head, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: `التجار-${new Date().toISOString().slice(0, 10)}.csv` })
   a.click(); URL.revokeObjectURL(a.href)
@@ -152,7 +152,7 @@ function exportList() {
               <span class="hr">
                 <StatusPill v-if="!t.due" tone="ok">خالص</StatusPill>
                 <StatusPill v-else-if="isOver(t)" tone="bad">فوق الحد</StatusPill>
-                <StatusPill v-else-if="t.days > 30" tone="draft">متأخر {{ t.days }} يوم</StatusPill>
+                <StatusPill v-else-if="isLate(t)" tone="draft">متأخر {{ lateBy(t) }} يوم</StatusPill>
                 <button type="button" class="iconbtn" :aria-label="`تعديل ${t.name}`" title="تعديل بيانات التاجر" @click="editTrader(t)"><AppIcon name="edit" /></button>
               </span>
             </div>
@@ -184,7 +184,7 @@ function exportList() {
                 <td>
                   <StatusPill v-if="!t.due" tone="ok">خالص</StatusPill>
                   <StatusPill v-else-if="isOver(t)" tone="bad">فوق الحد</StatusPill>
-                  <StatusPill v-else-if="t.days > 30" tone="draft">متأخر {{ t.days }} يوم</StatusPill>
+                  <StatusPill v-else-if="isLate(t)" tone="draft">متأخر {{ lateBy(t) }} يوم</StatusPill>
                   <span v-else class="muted">عادي</span>
                 </td>
                 <td class="ops"><div class="opsin">

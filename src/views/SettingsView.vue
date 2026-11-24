@@ -21,7 +21,7 @@ const TABS = computed(() => [
   { value: 'grades', label: 'أصناف السمك', sub: `${PRICES.length} أصناف`, comp: GradesSettings },
   { value: 'defaults', label: 'الموردين والتجار', sub: `عمولة ${SETTINGS.defaultRate}% · حد ${SETTINGS.defaultLimit.toLocaleString('en-US')}`, comp: DefaultsSettings },
   { value: 'cats', label: 'بنود المصاريف', sub: `${CATS.length} بنود`, comp: CatsSettings },
-  { value: 'split', label: 'توزيع الأرباح', sub: `إدارة ${SPLIT.mgmt}% · ${SPLIT.owner}/${100 - SPLIT.owner}`, comp: SplitSettings },
+  { value: 'split', label: 'توزيع الأرباح', sub: `إدارة ${SPLIT.mgmt}% · ${SPLIT.partners.length} شركاء`, comp: SplitSettings },
   ...(can('users') ? [{ value: 'users', label: 'المستخدمين', sub: `${USERS.filter((u) => u.active).length} فعّالين`, comp: UsersSettings }] : []),
 ])
 const tab = ref('agency')

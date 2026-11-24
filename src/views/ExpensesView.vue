@@ -6,7 +6,6 @@ import SearchPill from '../components/ui/SearchPill.vue'
 import SelectMenu from '../components/ui/SelectMenu.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import PagerBar from '../components/ui/PagerBar.vue'
-import BarChart from '../components/ui/BarChart.vue'
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import ExpenseForm from '../components/expenses/ExpenseForm.vue'
 import BudgetsDialog from '../components/expenses/BudgetsDialog.vue'
@@ -72,14 +71,6 @@ watch([q, cat, period, size], () => { page.value = 1 })
 const paged = computed(() => list.value.slice((page.value - 1) * size.value, page.value * size.value))
 function openCat(k) { cat.value = k; view.value = 'table' }
 const tone = (c) => (c.pct > 100 ? 'over' : c.pct >= 80 ? 'near' : 'fine')
-
-/* last 14 days */
-const bars = computed(() => Array.from({ length: 14 }, (_, i) => {
-  const day = 9 + i
-  const closed = new Date(2026, 10, day).getDay() === 5
-  return { key: day, label: `${day}/11`, value: all.value.filter((e) => e.day === day).reduce((a, e) => a + e.amount, 0), highlight: day === 22, gap: closed }
-}))
-const short = (v) => (v >= 1000 ? `${v / 1000}k` : String(v))
 
 /* actions */
 const formOpen = ref(false)
@@ -193,11 +184,6 @@ function exportList() {
       </div>
       <div v-if="view === 'table' && list.length" class="s12"><PagerBar v-model:page="page" v-model:size="size" :total="list.length" noun="مصروف" :sizes="[10, 20, 50]" /></div>
 
-      <section class="s12 card chartcard">
-        <div class="ch"><h2>الصرف آخر 14 يوم</h2><span class="meta num">المتوسط {{ fmt(Math.round(bars.filter((b) => !b.gap).reduce((a, b) => a + b.value, 0) / (bars.filter((b) => !b.gap).length || 1))) }} ج باليوم</span></div>
-        <div class="chartbox2"><BarChart :bars="bars" :step="1000" :label-every="2" :short="short" aria-label="المصاريف آخر 14 يوم" /></div>
-      </section>
-
     </div>
 
     <ExpenseForm v-model="formOpen" :expense="editFor" :preset="preset" @saved="onSaved" />
@@ -230,7 +216,6 @@ function exportList() {
 .duerow.late { background: var(--neg-bg); color: var(--neg-ink); } .duerow.clear { background: var(--pos-bg); color: var(--pos-ink); }
 .duerow .t { flex: 1; min-width: 0; } .duerow b { font-weight: 700; } .duerow small { display: block; font-size: 12px; opacity: .85; }
 .duerow .link { border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
-.chartcard .chartbox2 :deep(svg) { width: 100%; height: auto; max-height: 260px; }
 .findbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; position: relative; z-index: 5; }
 .findbar .search { width: 280px; max-width: 100%; } .findbar :deep(.spill) { max-width: none; background: #fff; }
 .fsel { width: 200px; } .psel { width: 150px; } .fsel :deep(.trig), .psel :deep(.trig) { height: 42px; border-radius: 999px; padding: 0 16px; background: #fff; }

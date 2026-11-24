@@ -22,8 +22,7 @@ function printIt() {
   .sum{width:320px;margin-inline-start:auto;font-size:14px}.sum div{display:flex;justify-content:space-between;padding:4px 0}.sum .t{border-top:2px solid #0b3b45;font-weight:700;font-size:16px}.foot{margin-top:40px;display:flex;justify-content:space-between;color:#52625f}</style></head>
   <body><div class="top"><div style="display:flex;gap:12px;align-items:center">${AGENCY.logo ? `<img src="${AGENCY.logo}" style="width:56px;height:56px;object-fit:contain">` : ''}<div><h1>فاتورة شراء رقم ${x.invoiceNo}</h1><small>${AGENCY.name} · ${AGENCY.place}${AGENCY.phone ? ' · ' + AGENCY.phone : ''}</small></div></div><div><b>${x.supplier}</b><br><small>بيان وصل ${x.time} · اعتمده ${x.approvedBy || ''} ${x.approvedAt || ''}</small></div></div>
   ${body ? `<table><thead><tr><th>الصنف</th><th>بوكس</th><th>كيلو</th><th>متوسط السعر</th><th>القيمة</th></tr></thead><tbody>${body}</tbody></table>` : `<p>${x.boxes} بوكس</p>`}
-  <div class="sum"><div><span>إجمالي البيع</span><b>${fmt(x.gross)}</b></div><div><span>العمولة ${x.rate}%</span><b>− ${fmt(x.commission)}</b></div><div class="t"><span>الصافي للمورد</span><span>${fmt(netOf(x))} ج</span></div>
-  ${x.asha ? `<div><small>العشا لصالح الوكالة: ${x.asha} كجم</small></div>` : ''}</div>
+  <div class="sum"><div><span>إجمالي البيع</span><b>${fmt(x.gross)}</b></div><div><span>العمولة ${x.rate}%</span><b>− ${fmt(x.commission)}</b></div><div class="t"><span>الصافي للمورد</span><span>${fmt(netOf(x))} ج</span></div></div>
   <div class="foot"><span>توقيع المحاسب ..................</span><span>توقيع المورد ..................</span></div>${AGENCY.note ? `<p style="text-align:center;color:#52625f;margin-top:24px">${AGENCY.note}</p>` : ''}</body></html>`
   const w = window.open('', '_blank')
   if (!w) return
@@ -49,7 +48,6 @@ defineExpose({ printIt })
           <div><dt>إجمالي البيع <small class="num">({{ m.boxes }} بوكس)</small></dt><dd class="num">{{ fmt(m.gross) }}</dd></div>
           <div class="cut"><dt>العمولة {{ m.rate }}%</dt><dd class="num">− {{ fmt(m.commission) }}</dd></div>
           <div class="tot"><dt>الصافي للمورد</dt><dd class="num">{{ fmt(netOf(m)) }} ج</dd></div>
-          <div v-if="m.asha" class="asha"><dt>العشا لصالح الوكالة</dt><dd class="num">{{ m.asha }} كجم</dd></div>
         </dl>
       </article>
       <p class="hint">الطباعة بتفتح الفاتورة لحالها، ومنها بتقدر تحفظها PDF. الواتساب بيفتح محادثة المورد وفيها الفاتورة ورابط كشفه.</p>
@@ -75,7 +73,7 @@ defineExpose({ printIt })
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th { text-align: right; font-weight: 500; color: var(--color-muted); padding: 4px 6px; } td { padding: 5px 6px; border-top: 1px solid #e6f1f2; }
 dl { margin: 0; display: grid; gap: 4px; font-size: 13px; } dl div { display: flex; justify-content: space-between; } dd { margin: 0; font-weight: 600; }
-dl small { color: var(--color-muted); } .cut dd { color: #b4532a; } .asha { color: var(--color-muted); font-size: 12px; }
+dl small { color: var(--color-muted); } .cut dd { color: #b4532a; }
 .tot { border-top: 1.5px dashed #c9e2e6; padding-top: 6px; font-size: 15px; } .tot dd { font-size: 20px; font-weight: 700; color: var(--color-primary-ink); }
 .hint { margin: 0; font-size: 12px; color: var(--color-muted); }
 .acts { display: flex; gap: 8px; width: 100%; justify-content: flex-end; flex-wrap: wrap; } .acts > :first-child { margin-inline-end: auto; }

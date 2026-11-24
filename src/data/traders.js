@@ -1,10 +1,45 @@
 // Trader accounts on the shared store: the statement (today's sheet lines + earlier history) and recording a payment.
 import { reactive } from 'vue'
-import { MANIFESTS, TRADERS, KG_PER_BOX } from './demo.js'
+import { MANIFESTS, TRADERS, PRICES, KG_PER_BOX, CASH_CUSTOMER, AGENCY, priceOf, fmt } from './demo.js'
 import { addMove, methodOf } from './safe.js'
+import { log } from './audit.js'
 
 export const findTrader = (name) => TRADERS.find((t) => t.name === name)
 export const isOver = (t) => t.due > t.limit
+
+/* how often a trader's credit is collected; late = he owes and his oldest unpaid invoice is older than his cycle */
+export const CYCLES = {
+  daily: { label: 'يومي', long: 'بيدفع كل يوم', days: 1 },
+  weekly: { label: 'أسبوعي', long: 'بيدفع كل أسبوع', days: 7 },
+  biweekly: { label: 'كل أسبوعين', long: 'بيدفع كل 15 يوم', days: 15 },
+  monthly: { label: 'شهري', long: 'بيدفع آخر كل شهر', days: 30 },
+}
+export const cycleOf = (t) => CYCLES[t.cycle] || CYCLES.weekly
+export const isLate = (t) => t.due > 0 && t.days > cycleOf(t).days
+export const lateBy = (t) => (isLate(t) ? t.days - cycleOf(t).days : 0)
+
+/* ---------- his prices: a special price per kilo for some grades, the rest follow the day's price ---------- */
+export const ownPrices = (t) => PRICES.map(([grade, day]) => ({ grade, day, own: t.prices?.[grade] || null }))
+export function setTraderPrice(t, grade, price) {
+  const before = t.prices?.[grade] || priceOf(grade)
+  if (!t.prices) t.prices = {}
+  t.prices[grade] = price
+  log('price', `سعر ${t.name}`, `${grade}: ${before} ← ${price} ج/كجم`, `/traders/${encodeURIComponent(t.name)}`)
+}
+/* values: { grade: price | '' } — empty means back to the day's price */
+export function setTraderPrices(t, values) {
+  const out = []
+  const next = {}
+  PRICES.forEach(([grade]) => {
+    const v = Number(values[grade]) || 0
+    const was = t.prices?.[grade] || 0
+    if (v > 0) next[grade] = v
+    if (v !== was) out.push(v ? `${grade}: ${was || 'سعر اليوم'} ← ${v}` : `${grade}: رجع لسعر اليوم`)
+  })
+  t.prices = next
+  if (out.length) log('price', `أسعار ${t.name}`, out.join(' · '), `/traders/${encodeURIComponent(t.name)}`)
+  return out.length
+}
 
 // age bucket of the oldest unpaid invoice: 0 = this week, 1 = this month, 2 = late, 3 = very late
 export const AGE_BUCKETS = [
@@ -67,7 +102,7 @@ export function normalizePhone(raw) {
 const toNumber = (v) => Number(String(v ?? '').replace(/[٠-٩]/g, (c) => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[^\d.]/g, '')) || 0
 
 /* checks a trader form; returns { errors, value } — errors keyed by field */
-export function checkTrader({ name, phone, limit, opening }, current = null) {
+export function checkTrader({ name, phone, limit, opening, cycle }, current = null) {
   const errors = {}
   const n = String(name ?? '').trim().replace(/\s+/g, ' ')
   if (!n) errors.name = 'اكتب اسم التاجر'
@@ -77,20 +112,21 @@ export function checkTrader({ name, phone, limit, opening }, current = null) {
   else if (!p) errors.phone = 'الرقم لازم يكون 11 رقم ويبلّش بـ 01'
   const l = toNumber(limit)
   if (!l) errors.limit = 'حدّد حد الدين'
-  return { errors, value: { name: n, phone: p, limit: l, opening: toNumber(opening) } }
+  return { errors, value: { name: n, phone: p, limit: l, opening: toNumber(opening), cycle: CYCLES[cycle] ? cycle : 'weekly' } }
 }
 
-export function addTrader({ name, phone, limit, opening = 0 }) {
-  const t = { name, phone, limit, due: opening, days: 0, lastBuy: '—', lastPay: '—', history: [] }
+const newToken = () => Math.random().toString(36).slice(2, 8)
+export function addTrader({ name, phone, limit, opening = 0, cycle = 'weekly' }) {
+  const t = { name, phone, limit, due: opening, days: 0, lastBuy: '—', lastPay: '—', history: [], prices: {}, cycle, token: newToken(), code: phone.replace(/D/g, '').slice(-4) }
   if (opening) t.history.push({ kind: 'buy', title: 'رصيد افتتاحي', sub: 'عند فتح الحساب', amount: opening, date: 'اليوم' })
   TRADERS.push(t)
   return TRADERS[TRADERS.length - 1]
 }
 
 /* edit; a new name is carried into today's sheet lines so the statement keeps them */
-export function updateTrader(t, { name, phone, limit }) {
+export function updateTrader(t, { name, phone, limit, cycle }) {
   if (name !== t.name) MANIFESTS.forEach((m) => m.lines.forEach((l) => { if (l.trader === t.name) l.trader = name }))
-  Object.assign(t, { name, phone, limit })
+  Object.assign(t, { name, phone, limit }, cycle ? { cycle } : {})
   return t
 }
 
@@ -130,4 +166,47 @@ export function applyImport(plan) {
     if (r.status === 'update') { updateTrader(r.existing, { name: r.name, phone: r.phone, limit: r.limit }); updated++ }
   })
   return { added, updated }
+}
+
+/* ---------- the trader's sales invoice: everything he bought today, from every manifest ---------- */
+let saleSeq = 5400
+const SALE_NOS = {} // trader name → today's invoice number (kept once given)
+export const saleNoOf = (name) => (SALE_NOS[name] ||= ++saleSeq)
+export const boughtToday = (name) => MANIFESTS.some((m) => m.lines.some((l) => l.trader === name))
+/* who has an invoice today: traders (and the cash customer) with at least one line, biggest first */
+export const buyersToday = () => {
+  const names = [...new Set(MANIFESTS.flatMap((m) => m.lines.map((l) => l.trader)))]
+  return names.map((n) => ({ name: n, ...saleInvoice(n) })).sort((a, b) => b.total - a.total)
+}
+export function saleInvoice(name) {
+  const rows = MANIFESTS.flatMap((m) => m.lines.filter((l) => l.trader === name).map((l) => ({
+    id: l.id, supplier: m.supplier, grade: l.grade, boxes: l.boxes, kg: l.boxes * KG_PER_BOX, price: l.price, total: l.boxes * KG_PER_BOX * l.price, pay: l.pay,
+  }))).reverse()
+  const total = rows.reduce((a, r) => a + r.total, 0)
+  const cash = rows.filter((r) => r.pay === 'cash').reduce((a, r) => a + r.total, 0)
+  const credit = total - cash
+  const t = findTrader(name)
+  const after = t ? t.due : 0
+  return { no: rows.length ? saleNoOf(name) : null, rows, total, cash, credit, before: after - credit, after, trader: t, cashCustomer: name === CASH_CUSTOMER }
+}
+export function saleInvoiceText(name) {
+  const x = saleInvoice(name)
+  const rows = x.rows.map((r) => `• ${r.grade} (${r.supplier}): ${r.boxes} بوكس · ${fmt(r.kg)} ك × ${r.price} = ${fmt(r.total)} ج${r.pay === 'cash' ? ' (نقدي)' : ''}`).join('\n')
+  const bal = x.trader ? `\nحسابك قبل: ${fmt(x.before)} ج\nحسابك بعد فاتورة اليوم: ${fmt(x.after)} ج` : ''
+  return `السلام عليكم ${name}\nفاتورة بيع رقم ${x.no} من ${AGENCY.name}\n${rows}\nالإجمالي: ${fmt(x.total)} ج${x.cash ? `\nمدفوع نقدي: ${fmt(x.cash)} ج` : ''}${x.credit ? `\nآجل على الحساب: ${fmt(x.credit)} ج` : ''}${bal}${x.trader ? `\n\nكشف حسابك وفواتيرك:\n${traderShareUrl(x.trader)}` : ''}`
+}
+export function whatsappSaleInvoice(name) {
+  const t = findTrader(name)
+  const phone = t ? '2' + t.phone.replace(/\D/g, '') : ''
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(saleInvoiceText(name))}`, '_blank', 'noopener')
+}
+
+/* ---------- his own account: a private link + a 4-digit code (he sees only his statement and invoices) ---------- */
+export const findTraderByToken = (token) => TRADERS.find((t) => t.token === token)
+export const traderShareUrl = (t) => `${location.origin}/t/${t.token}`
+export function renewTraderToken(t) { t.token = newToken(); return traderShareUrl(t) }
+export function resetTraderCode(t) {
+  t.code = String(Math.floor(1000 + Math.random() * 9000))
+  log('settings', `كود دخول ${t.name}`, 'انعمل كود جديد', `/traders/${encodeURIComponent(t.name)}`)
+  return t.code
 }

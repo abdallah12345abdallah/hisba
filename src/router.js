@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from './views/DashboardView.vue'
 import { me, can, homeFor } from './data/auth.js'
+import { PORTAL, pathOf, portalValid } from './data/portal.js'
 import { toast } from './composables/useToast.js'
 
 // meta.perm: the permission a page needs. meta.public: opens without signing in (sign-in and the shared statements).
@@ -30,6 +31,8 @@ const router = createRouter({
     // the read-only statement links for farms and shareholders: no sidebar, no sign-in
     { path: '/i/:token', name: 'investor-share', component: () => import('./views/InvestorShareView.vue'), meta: { bare: true, public: true } },
     { path: '/s/:token', name: 'supplier-share', component: () => import('./views/SupplierShareView.vue'), meta: { bare: true, public: true } },
+    // a trader's own page (link + code, or phone + code from the sign-in screen)
+    { path: '/t/:token', name: 'trader-share', component: () => import('./views/TraderShareView.vue'), meta: { bare: true, public: true } },
     { path: '/:rest(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
@@ -37,7 +40,13 @@ const router = createRouter({
 
 /* signed out → the sign-in screen (then back to where they were going); no permission → their own first page */
 router.beforeEach((to) => {
-  if (to.meta.public) return to.name === 'login' && me.value ? homeFor() : true
+  if (to.meta.public) {
+    if (to.name !== 'login') return true
+    if (me.value) return homeFor()
+    // a trader or a farm already signed in on this device goes straight back to his own page
+    if (portalValid() && !to.query.next) return pathOf(PORTAL.kind, PORTAL.token)
+    return true
+  }
   if (!me.value) return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} }
   if (to.meta.perm && !can(to.meta.perm)) {
     const home = homeFor()

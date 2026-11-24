@@ -58,7 +58,7 @@ export function saveDefaults(v) {
 }
 
 /* ---------- expense categories ---------- */
-export const ICON_CHOICES = ['ice', 'fuel', 'box', 'wrench', 'bolt', 'building', 'coffee', 'doc', 'truck', 'phone', 'cash', 'staff', 'dots']
+export const ICON_CHOICES = ['asha', 'ice', 'fuel', 'box', 'wrench', 'bolt', 'building', 'coffee', 'doc', 'truck', 'phone', 'cash', 'staff', 'dots']
 export const catInUse = (key) => allExpenses().some((e) => e.cat === key) || RECURRING.some((r) => r.cat === key)
 export function saveCats(rows) {
   const out = []
@@ -78,9 +78,13 @@ export function saveCats(rows) {
 }
 
 /* ---------- profit split ---------- */
-export function saveSplit({ mgmt, owner }) {
-  const changed = SPLIT.mgmt !== mgmt || SPLIT.owner !== owner
-  if (changed) log('settings', 'توزيع الأرباح', `الإدارة ${SPLIT.mgmt}% ← ${mgmt}% · صاحب الحلقة ${SPLIT.owner}% ← ${owner}%`, '/settings')
-  SPLIT.mgmt = mgmt; SPLIT.owner = owner
+const partnersText = (rows) => rows.map((p) => `${p.name} ${p.pct}%`).join('، ')
+export function saveSplit({ mgmt, partners }) {
+  const clean = partners.map((p) => ({ name: String(p.name).trim(), pct: Number(p.pct) }))
+  const before = partnersText(SPLIT.partners), after = partnersText(clean)
+  const changed = SPLIT.mgmt !== mgmt || before !== after
+  if (changed) log('settings', 'توزيع الأرباح', `الإدارة ${SPLIT.mgmt}% ← ${mgmt}% · شركاء الإدارة: ${after}`, '/settings')
+  SPLIT.mgmt = mgmt
+  SPLIT.partners.splice(0, SPLIT.partners.length, ...clean)
   return changed
 }

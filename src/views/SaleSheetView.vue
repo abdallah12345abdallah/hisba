@@ -18,6 +18,7 @@ import { gradeColor } from '../utils/grades.js'
 import { KG_PER_BOX } from '../data/demo.js'
 import InvoiceNote from '../components/sheet/InvoiceNote.vue'
 import ApprovedDialog from '../components/sheet/ApprovedDialog.vue'
+import SaleInvoicesDialog from '../components/traders/SaleInvoicesDialog.vue'
 import { MANIFESTS, TRADERS, fmt } from '../data/demo.js'
 import { findManifest, addLine, removeLine, restoreLine, approve, lineTotal, netOf, whatsappInvoice } from '../data/sheet.js'
 import { can } from '../data/auth.js'
@@ -95,7 +96,7 @@ const invoiceOpen = ref(false)
 const invoiceFresh = ref(false)
 const nudgePrint = ref(false)
 function showInvoice(x) { approvedOpen.value = false; invoiceFor.value = x; invoiceFresh.value = false; nudgePrint.value = false; invoiceOpen.value = true }
-watch(approveOpen, (v) => { if (v) asha.value = String(m.value.asha) })
+watch(approveOpen, (v) => { if (v) asha.value = m.value.asha ? String(m.value.asha) : '' })
 function doApprove() {
   const sheet = m.value
   approve(sheet, Number(asha.value) || 0)
@@ -115,6 +116,8 @@ const savedRows = computed(() => (m.value ? [
   { label: 'الصافي للمورد', value: `${fmt(m.value.gross - m.value.commission)} ج` },
 ] : []))
 function saveDraft() { savedOpen.value = true }
+/* the traders' sales invoices for today */
+const buyersOpen = ref(false)
 </script>
 
 <template>
@@ -165,7 +168,7 @@ function saveDraft() { savedOpen.value = true }
         <div class="s12"><CrateBoard :manifest="m" @sell="sell" /></div>
 
         <section class="s12 card tblcard">
-          <div class="ch"><h2>البيعات</h2><span class="lpills num"><span class="lp">{{ m.lines.length }} {{ m.lines.length === 1 ? 'بيعة' : 'بيعات' }}</span><span class="lp sold">{{ m.sold }} من {{ m.boxes }} بوكس انباعوا</span></span></div>
+          <div class="ch"><span class="chl"><h2>البيعات</h2><SoftButton size="sm" icon="receipt" @click="buyersOpen = true">فواتير التجار</SoftButton></span><span class="lpills num"><span class="lp">{{ m.lines.length }} {{ m.lines.length === 1 ? 'بيعة' : 'بيعات' }}</span><span class="lp sold">{{ m.sold }} من {{ m.boxes }} بوكس انباعوا</span></span></div>
           <EmptyState v-if="!m.lines.length" icon="sheet" title="لسا ما في بيعات" text="اسحب صنف لعند التاجر، أو اكبس الصنف بعدين التاجر." />
           <div v-else class="stbl-wrap">
             <table class="stbl">
@@ -196,7 +199,7 @@ function saveDraft() { savedOpen.value = true }
       <AppModal v-model="approveOpen" title="اعتماد البيان وإصدار الفاتورة" :text="m.reopened ? `${m.supplier} · الصافي كان ${fmt(m.reopened.net)} ج وهلأ ${fmt(netOf(m))} ج. بعد الاعتماد بيرجع ينقفل.` : `${m.supplier} · ${m.boxes} بوكس · بعد الاعتماد الشيت بيتقفل، ولتعديله لازم تفتحه مع ذكر السبب.`" :width="460">
         <AmountField label="المستحق للمورد" :value="m.gross - m.commission" tone="soft"
           :caption="`إجمالي ${fmt(m.gross)} − عمولة ${m.rate}% (${fmt(m.commission)})`" />
-        <FilledInput v-model="asha" label="العشا (كجم)" type="number" dir="ltr" hint="الزيادة اللي بتضل لصالح الوكالة." />
+        <FilledInput v-model="asha" label="العشا (ج)" type="number" dir="ltr" hint="بينسجّل مصروف تحت بند «العشا» وبيطلع من الدرج. خليه فاضي إذا ما في." />
         <ToggleSwitch v-model="sendWhatsapp" label="ابعت الفاتورة للمورد على الواتساب" />
         <ToggleSwitch v-model="printIt" label="اطبع الفاتورة" />
         <template #actions>
@@ -215,10 +218,12 @@ function saveDraft() { savedOpen.value = true }
 
     <InvoiceNote ref="invoiceRef" v-model="invoiceOpen" :manifest="invoiceFor" :fresh="invoiceFresh" :nudge-print="nudgePrint" />
     <ApprovedDialog v-model="approvedOpen" @invoice="showInvoice" />
+    <SaleInvoicesDialog v-model="buyersOpen" />
   </div>
 </template>
 
 <style scoped>
+.chl { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* sales table */
 .stbl-wrap { overflow-x: auto; }
 .stbl { width: 100%; min-width: 680px; border-collapse: separate; border-spacing: 0 5px; font-size: 13.5px; }

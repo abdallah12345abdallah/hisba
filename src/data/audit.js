@@ -2,6 +2,7 @@
 // approving and reopening manifests, lines changed on a reopened manifest, price changes, deleted safe moves.
 import { reactive } from 'vue'
 import { USER } from './demo.js'
+import { markChange } from './sync.js'
 
 export const KINDS = {
   approve: { label: 'اعتماد', icon: 'check', tone: 'ok' },
@@ -28,4 +29,5 @@ export const AUDIT = reactive([
 
 export function log(kind, title, detail = '', link = null) {
   AUDIT.unshift({ id: ++id, day: 'اليوم', time: now(), user: USER.name, kind, title, detail, link })
+  markChange()
 }

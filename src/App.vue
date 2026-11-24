@@ -2,6 +2,7 @@
 import AppShell from './components/AppShell.vue'
 import { useRoute } from 'vue-router'
 import ToastHost from './components/ui/ToastHost.vue'
+import NetBadge from './components/ui/NetBadge.vue'
 const route = useRoute()
 </script>
 
@@ -15,4 +16,5 @@ const route = useRoute()
     </RouterView>
   </AppShell>
   <ToastHost />
+  <NetBadge />
 </template>

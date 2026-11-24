@@ -11,7 +11,9 @@ export const CATS = reactive([
   { key: 'repair', label: 'صيانة', icon: 'wrench', budget: 6000, words: ['صيانة', 'تصليح', 'ميزان', 'تلاجة', 'ثلاجة'] },
   { key: 'util', label: 'كهربا ومياه', icon: 'bolt', budget: 3500, words: ['كهربا', 'كهرباء', 'مياه', 'ماي', 'نور'] },
   { key: 'rent', label: 'إيجار', icon: 'building', budget: 8000, words: ['إيجار', 'ايجار', 'المحل'] },
-  { key: 'food', label: 'أكل وضيافة', icon: 'coffee', budget: 3000, words: ['فطور', 'أكل', 'اكل', 'شاي', 'قهوة', 'غدا', 'ضيافة', 'عشا'] },
+  // العشا: the agency's share given out on each manifest, entered when the manifest is approved
+  { key: 'asha', label: 'العشا', icon: 'asha', budget: 12000, words: ['عشا', 'العشا'] },
+  { key: 'food', label: 'أكل وضيافة', icon: 'coffee', budget: 3000, words: ['فطور', 'أكل', 'اكل', 'شاي', 'قهوة', 'غدا', 'ضيافة'] },
   { key: 'fees', label: 'رسوم وتصاريح', icon: 'doc', budget: 2000, words: ['رسوم', 'تصريح', 'كارتة', 'بلدية', 'سجل', 'ضريبة'] },
   { key: 'other', label: 'أخرى', icon: 'dots', budget: 2000, words: [] },
 ])
@@ -19,7 +21,7 @@ export const catOf = (key) => CATS.find((c) => c.key === key) || CATS[CATS.lengt
 export const guessCat = (text = '') => (CATS.find((c) => c.words.some((w) => text.includes(w))) || CATS[CATS.length - 1]).key
 
 /* earlier this month (1–21 Nov) — fixed seed so the numbers stay the same */
-const SEEDS = [['ice', 'ثلج للبيان', 420], ['food', 'فطور العمال', 300], ['fuel', 'بنزين التروسيكل', 550], ['ice', 'ثلج إضافي', 280], ['pack', 'أكياس نايلون', 640], ['fuel', 'نولون عربية', 900], ['repair', 'تصليح الميزان', 750], ['food', 'شاي وقهوة', 120], ['fees', 'كارتة الطريق', 60]]
+const SEEDS = [['ice', 'ثلج للبيان', 420], ['food', 'فطور العمال', 300], ['fuel', 'بنزين التروسيكل', 550], ['ice', 'ثلج إضافي', 280], ['pack', 'أكياس نايلون', 640], ['fuel', 'نولون عربية', 900], ['repair', 'تصليح الميزان', 750], ['food', 'شاي وقهوة', 120], ['fees', 'كارتة الطريق', 60], ['asha', 'عشا البيانات', 450]]
 let rid = 50000
 const past = []
 for (let day = 1; day <= 21; day++) {

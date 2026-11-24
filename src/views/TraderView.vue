@@ -7,8 +7,12 @@ import StatusPill from '../components/ui/StatusPill.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import PayDialog from '../components/traders/PayDialog.vue'
 import TraderForm from '../components/traders/TraderForm.vue'
+import SaleInvoice from '../components/traders/SaleInvoice.vue'
+import TraderPricesDialog from '../components/traders/TraderPricesDialog.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import { fmt } from '../data/demo.js'
-import { findTrader, isOver, statementOf, AGE_BUCKETS, bucketOf, whatsappStatement } from '../data/traders.js'
+import { findTrader, isOver, statementOf, AGE_BUCKETS, bucketOf, whatsappStatement, cycleOf, isLate, lateBy, ownPrices, boughtToday, traderShareUrl, renewTraderToken, resetTraderCode } from '../data/traders.js'
+import { toast } from '../composables/useToast.js'
 
 // One trader's account — "صفحة خاصة" (approved أ): its own address, the figures, the statement as a table with a filter,
 // debt age and the trader's details on the side, and the actions (print, WhatsApp statement, receive payment).
@@ -53,6 +57,27 @@ function printIt() { window.print() }
 const formOpen = ref(false)
 function onSaved(x) { if (x.name !== decodeURIComponent(route.params.name)) router.replace(`/traders/${encodeURIComponent(x.name)}`) }
 function onDeleted() { router.push('/traders') }
+
+/* today's sales invoice, his prices, and his own account (link + code) */
+const invoiceOpen = ref(false)
+const pricesOpen = ref(false)
+const prices = computed(() => (t.value ? ownPrices(t.value) : []))
+const ownCount = computed(() => prices.value.filter((p) => p.own).length)
+const link = computed(() => (t.value ? traderShareUrl(t.value) : ''))
+const linkShort = computed(() => link.value.replace(/^https?:\/\//, ''))
+const showCode = ref(false)
+async function copyLink() {
+  try { await navigator.clipboard.writeText(link.value); toast('انتسخ الرابط', 'ابعته للتاجر، وبيدخل بكوده.', { tone: 'info' }) } catch { toast('ما قدرت انسخ', link.value, { tone: 'info' }) }
+}
+function sendAccess() {
+  const x = t.value
+  const text = `السلام عليكم ${x.name}\nصار فيك تشوف حسابك وفواتيرك عندنا من موبايلك:\n${link.value}\nكود الدخول: ${x.code}\n(أو من صفحة الدخول: «تاجر أو مورد؟» برقم تلفونك والكود)`
+  window.open(`https://wa.me/2${x.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
+}
+const askRenew = ref(false)
+function doRenew() { renewTraderToken(t.value); toast('انعمل رابط جديد', 'الرابط القديم ما عاد يفتح. ابعتله الجديد.', { tone: 'info' }) }
+const askCode = ref(false)
+function doCode() { const c = resetTraderCode(t.value); showCode.value = true; toast('انعمل كود جديد', `كود ${t.value.name} صار ${c}`, { tone: 'info' }) }
 </script>
 
 <template>
@@ -69,11 +94,12 @@ function onDeleted() { router.push('/traders') }
           <h1>{{ t.name }}
             <StatusPill v-if="!t.due" tone="ok">خالص</StatusPill>
             <StatusPill v-else-if="over" tone="bad">فوق الحد</StatusPill>
-            <StatusPill v-else-if="t.days > 30" tone="draft">متأخر {{ t.days }} يوم</StatusPill>
+            <StatusPill v-else-if="isLate(t)" tone="draft">متأخر عن موعده {{ lateBy(t) }} يوم</StatusPill>
           </h1>
           <p class="num"><AppIcon name="phone" />{{ t.phone }} · اشترى اليوم بـ <b>{{ fmt(bought) }} ج</b></p>
         </div>
         <div class="actions">
+          <SoftButton icon="receipt" :disabled="!boughtToday(t.name)" :title="boughtToday(t.name) ? '' : 'ما اشترى شي اليوم'" @click="invoiceOpen = true">فاتورة اليوم</SoftButton>
           <SoftButton icon="print" @click="printIt">طباعة</SoftButton>
           <SoftButton icon="whatsapp" @click="sendStatement">كشف واتساب</SoftButton>
           <SoftButton icon="cash" tone="primary" :disabled="!t.due" @click="payOpen = true">تسجيل قبض</SoftButton>
@@ -136,13 +162,37 @@ function onDeleted() { router.push('/traders') }
             <dl>
               <div><dt>التلفون</dt><dd class="num">{{ t.phone }}</dd></div>
               <div><dt>حد الدين</dt><dd class="num">{{ fmt(t.limit) }} ج</dd></div>
+              <div><dt>التحصيل</dt><dd :class="{ late: isLate(t) }">{{ cycleOf(t).label }}<small v-if="isLate(t)" class="num"> · متأخر {{ lateBy(t) }} يوم</small></dd></div>
               <div><dt>آخر شرا</dt><dd>{{ t.lastBuy }}</dd></div>
               <div><dt>آخر دفعة</dt><dd>{{ t.lastPay }}</dd></div>
             </dl>
           </section>
+          <section class="card tprice">
+            <div class="ch"><h2>أسعاره</h2><SoftButton size="sm" icon="tag" @click="pricesOpen = true">تعديل</SoftButton></div>
+            <p class="pmeta">{{ ownCount ? `${ownCount} أصناف بسعر خاص، والباقي بسعر اليوم` : 'بيمشي على سعر اليوم بكل الأصناف' }}</p>
+            <ul>
+              <li v-for="p in prices" :key="p.grade" :class="{ own: p.own }"><span>{{ p.grade }}</span><b class="num">{{ p.own || p.day }}<small> ج</small></b><em v-if="p.own" class="num">{{ p.own > p.day ? '+' : '' }}{{ p.own - p.day }}</em></li>
+            </ul>
+          </section>
+          <section class="card acc">
+            <div class="ch"><h2>حسابه على حِسبة</h2><AppIcon name="key" /></div>
+            <p class="pmeta">بيفتح رابطه أو بيدخل برقم تلفونه والكود، وبيشوف كشفه وفواتيره بس.</p>
+            <div class="linkbox num" dir="ltr">{{ linkShort }}</div>
+            <div class="code"><span>كود الدخول</span><b class="num">{{ showCode ? t.code : '••••' }}</b><button type="button" class="eye" @click="showCode = !showCode">{{ showCode ? 'خبّي' : 'وَرجي' }}</button></div>
+            <div class="accbtns">
+              <SoftButton size="sm" icon="whatsapp" @click="sendAccess">ابعتله الدخول</SoftButton>
+              <SoftButton size="sm" icon="link" @click="copyLink">نسخ الرابط</SoftButton>
+              <SoftButton size="sm" icon="sync" @click="askRenew = true">رابط جديد</SoftButton>
+              <SoftButton size="sm" icon="key" @click="askCode = true">كود جديد</SoftButton>
+            </div>
+          </section>
         </div>
       </div>
 
+      <SaleInvoice v-model="invoiceOpen" :name="t.name" />
+      <TraderPricesDialog v-model="pricesOpen" :trader="t" />
+      <ConfirmDialog v-model="askRenew" title="تعمل رابط جديد؟" confirm="رابط جديد" text="الرابط القديم ما عاد يفتح، ولازم تبعتله الجديد." @confirm="doRenew" />
+      <ConfirmDialog v-model="askCode" title="تعمل كود دخول جديد؟" confirm="كود جديد" text="الكود القديم ما عاد يشتغل، ولازم تبعتله الجديد." @confirm="doCode" />
       <PayDialog v-model="payOpen" :trader="t" />
       <TraderForm v-model="formOpen" :trader="t" @saved="onSaved" @deleted="onDeleted" />
     </template>
@@ -222,6 +272,20 @@ function onDeleted() { router.push('/traders') }
 .info dl div:last-child { border: 0; padding: 0; }
 .info dt { color: var(--color-muted); }
 .info dd { margin: 0; font-weight: 600; }
+.info dd.late { color: var(--color-negative); }
+.pmeta { margin: 0 0 10px; font-size: 12.5px; color: var(--color-muted); }
+.tprice ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tprice li { display: flex; align-items: center; gap: 6px; background: #f6f9f9; border-radius: 10px; padding: 7px 10px; font-size: 12.5px; min-width: 0; }
+.tprice li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); }
+.tprice li b { font-weight: 700; color: var(--color-deep); } .tprice li b small { font-weight: 500; color: var(--color-muted); }
+.tprice li.own { background: var(--color-primary-pale); } .tprice li.own span { color: var(--color-primary-ink); font-weight: 600; }
+.tprice li em { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--color-primary-ink); }
+.acc .ch :deep(svg) { width: 19px; height: 19px; color: var(--color-primary); }
+.linkbox { background: #f6f9f9; border-radius: 10px; padding: 8px 10px; font-size: 12px; color: var(--color-primary-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.code { display: flex; align-items: center; gap: 10px; margin: 8px 0 10px; font-size: 13px; color: var(--color-muted); }
+.code b { font-size: 20px; letter-spacing: 4px; color: var(--color-deep); }
+.eye { margin-inline-start: auto; border: 0; background: none; color: var(--color-primary-ink); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.accbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; } .accbtns :deep(.sbt) { width: 100%; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .trader .grid > * { min-width: 0; }
 @media (max-width: 900px) { .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
